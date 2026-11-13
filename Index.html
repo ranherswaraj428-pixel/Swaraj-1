@@ -1,0 +1,213 @@
+# index.html
+
+<!DOCTYPE html>
+<html lang="mr">
+<head>
+<meta charset="utf-8">
+<title>गाव-शहर ऑफ-रोड</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdnjs.cloudflare.com 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<style>
+:root{--hud:rgba(14,18,24,.62);--tx:#fff;--ac:#ffb020;--card:#f4f1ea;--ct:#1b1f26;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--hud:rgba(0,0,0,.7);--tx:#f2f2f2;--ac:#ffc04a;--card:#1b2029;--ct:#f2f2f2;color-scheme:dark}}
+:root[data-theme="dark"]{--hud:rgba(0,0,0,.7);--tx:#f2f2f2;--ac:#ffc04a;--card:#1b2029;--ct:#f2f2f2}
+html,body{margin:0;height:100%;overflow:hidden;background:#9fd3f5;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans Devanagari",sans-serif;color:var(--tx);touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#hud{position:fixed;top:0;left:0;right:0;display:flex;gap:8px;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 10px 0;flex-wrap:wrap}
+.b{background:var(--hud);padding:7px 12px;border-radius:10px;font-weight:600;font-size:15px;color:#fff}
+#spd{font-size:20px;color:var(--ac)}
+#rs{background:var(--hud);color:#fff;border:0;border-radius:10px;font-size:18px;padding:6px 12px}
+#msg{position:fixed;top:30%;left:0;right:0;text-align:center;font-size:24px;font-weight:700;text-shadow:0 2px 8px #000;pointer-events:none}
+#touch{display:none;position:fixed;left:0;right:0;bottom:0;justify-content:space-between;padding:0 14px calc(16px + env(safe-area-inset-bottom,0px))}
+.pad{display:flex;gap:12px}
+.pad button{width:74px;height:74px;border-radius:50%;border:0;background:var(--hud);color:#fff;font-size:20px;font-weight:700;touch-action:none}
+@media (hover:none) and (pointer:coarse){#touch{display:flex}}
+#start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,14,20,.55);padding:16px}
+.card{background:var(--card);color:var(--ct);border-radius:14px;padding:26px 28px;max-width:420px;text-align:center}
+.card h1{margin:0 0 10px;font-size:28px}
+.card p{margin:6px 0;line-height:1.5;font-size:15px}
+.card button{margin-top:16px;background:#d62828;color:#fff;border:0;border-radius:10px;font-size:18px;font-weight:700;padding:12px 28px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><div class="b" id="zone">शहर</div><div class="b"><span id="spd">0</span> किमी/तास</div><div class="b">🪙 <span id="coin">0</span>/30</div><button id="rs" title="रीसेट">↺</button></div>
+<div id="msg"></div>
+<div id="touch"><div class="pad"><button id="bL">◀</button><button id="bR">▶</button></div><div class="pad"><button id="bB">मागे</button><button id="bG">▲</button></div></div>
+<div id="start"><div class="card"><h1>गाव-शहर ऑफ-रोड</h1><p>शहरातून निघा, गावातून जा आणि डोंगराळ ऑफ-रोडवर चढा. नकाशावर पसरलेली 30 नाणी गोळा करा.</p><p>W A S D किंवा बाण = चालवा<br>Space = हँडब्रेक • R = रीसेट</p><button id="go">खेळ सुरू करा</button></div></div>
+<script>
+(()=>{
+const W=THREE,$=id=>document.getElementById(id);
+let seed=7;const rnd=()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const rr=(a,b)=>a+(b-a)*rnd(),cl=(x,a,b)=>Math.min(b,Math.max(a,x));
+const sm=(a,b,x)=>{x=cl((x-a)/(b-a),0,1);return x*x*(3-2*x)};
+const nz=(x,z)=>Math.sin(x*.045)*Math.cos(z*.04)*.6+Math.sin(x*.11+z*.07)*.3+Math.sin(z*.13-x*.05)*.2;
+const H=(x,z)=>nz(x,z)*(2.5*sm(-95,-50,x)+11*sm(100,200,x))*sm(10,44,Math.abs(z));
+const ZS=[-150,-100,-50,0,50,100,150],XS=[-240,-190,-140,-90];
+const onRoad=(x,z)=>{if(Math.abs(z)<(x<110?9:5.5)&&x>-250&&x<330)return true;if(x<-85){for(const a of ZS)if(Math.abs(z-a)<9)return true;for(const a of XS)if(Math.abs(x-a)<9)return true}return false};
+
+const R=$('c'),renderer=new W.WebGLRenderer({canvas:R,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;
+const scene=new W.Scene();scene.background=new W.Color(0x9fd3f5);scene.fog=new W.Fog(0x9fd3f5,90,400);
+const cam=new W.PerspectiveCamera(62,1,.5,700);
+scene.add(new W.HemisphereLight(0xffffff,0x5b6b44,.75));
+const sun=new W.DirectionalLight(0xfff0cc,.95);sun.castShadow=true;sun.shadow.mapSize.set(1024,1024);
+Object.assign(sun.shadow.camera,{left:-70,right:70,top:70,bottom:-70,far:300});scene.add(sun,sun.target);
+function resize(){renderer.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+
+// terrain
+const tg=new W.PlaneGeometry(600,400,150,100);tg.rotateX(-Math.PI/2);
+const tp=tg.attributes.position,tc=new Float32Array(tp.count*3);
+for(let i=0;i<tp.count;i++){const x=tp.getX(i)+50,z=tp.getZ(i),h=H(x,z);tp.setY(i,h);
+const ci=1-sm(-100,-88,x),of=sm(95,125,x),vi=1-ci-of,j=.92+.06*Math.sin(x*.7)*Math.cos(z*.9)+.05*nz(x*3,z*3);
+tc[i*3]=(ci*.5+vi*.34+of*cl(.62+h*.008,.3,.8))*j;tc[i*3+1]=(ci*.5+vi*.56+of*cl(.47+h*.006,.25,.7))*j;tc[i*3+2]=(ci*.49+vi*.2+of*.29)*j}
+tg.setAttribute('color',new W.BufferAttribute(tc,3));tg.computeVertexNormals();
+const terr=new W.Mesh(tg,new W.MeshLambertMaterial({vertexColors:true}));terr.position.x=50;terr.receiveShadow=true;scene.add(terr);
+
+// roads
+const asph=new W.MeshLambertMaterial({color:0x2b2c30});
+function strip(x0,x1,z0,z1,m,y){const g=new W.PlaneGeometry(x1-x0,z1-z0);g.rotateX(-Math.PI/2);const o=new W.Mesh(g,m);o.position.set((x0+x1)/2,y,(z0+z1)/2);o.receiveShadow=true;scene.add(o)}
+ZS.forEach(z=>strip(-250,z?-90:110,z-9,z+9,asph,.05));XS.forEach(x=>strip(x-9,x+9,-200,200,asph,.05));
+strip(110,330,-4.5,4.5,new W.MeshLambertMaterial({color:0x8b6c45}),.06);
+const dd=[];ZS.forEach(z=>{for(let x=-246;x<(z?-92:108);x+=8)if(!XS.some(a=>Math.abs(x-a)<11))dd.push([x,z,0])});
+XS.forEach(x=>{for(let z=-196;z<200;z+=8)if(!ZS.some(a=>Math.abs(z-a)<11))dd.push([x,z,1])});
+const dm=new W.InstancedMesh(new W.BoxGeometry(3.4,.02,.3),new W.MeshBasicMaterial({color:0xf2e9b8}),dd.length),O=new W.Object3D();
+dd.forEach((d,i)=>{O.position.set(d[0],.08,d[1]);O.rotation.y=d[2]?Math.PI/2:0;O.updateMatrix();dm.setMatrixAt(i,O.matrix)});scene.add(dm);
+
+// city
+const CO=[];
+const lp=[];for(let x=-80;x<=100;x+=22)for(const s of[-1,1])lp.push([x,s*11.5]);
+const lpm=new W.InstancedMesh(new W.CylinderGeometry(.18,.22,7,6).translate(0,3.5,0),new W.MeshLambertMaterial({color:0x44484f}),lp.length),
+lhm=new W.InstancedMesh(new W.BoxGeometry(1.4,.35,.6).translate(0,7.1,0),new W.MeshBasicMaterial({color:0xfff1b0}),lp.length);
+lp.forEach((p,i)=>{O.position.set(p[0],H(p[0],p[1]),p[1]);O.rotation.set(0,0,0);O.scale.set(1,1,1);O.updateMatrix();lpm.setMatrixAt(i,O.matrix);lhm.setMatrixAt(i,O.matrix);CO.push({x:p[0],z:p[1],hw:.4,hd:.4})});
+lpm.castShadow=true;scene.add(lpm,lhm);
+const wc=document.createElement('canvas');wc.width=wc.height=64;const wg=wc.getContext('2d');wg.fillStyle='#fff';wg.fillRect(0,0,64,64);
+for(let i=0;i<2;i++)for(let j=0;j<2;j++){wg.fillStyle=rnd()>.4?'#2b3a52':'#ffd86b';wg.fillRect(i*32+6,j*32+8,20,16)}
+const wt=new W.CanvasTexture(wc);wt.wrapS=wt.wrapT=W.RepeatWrapping;
+const bm=[0xb9b3a6,0x8fa3b5,0xc9a58a,0x9aa08f,0xd6d0c4,0x7f8a99].map(c=>new W.MeshLambertMaterial({color:c,map:wt}));
+for(const cx of[-215,-165,-115])for(const cz of[-175,-125,-75,-25,25,75,125,175])for(const sx of[-1,1])for(const sz of[-1,1]){
+if(rnd()<.15)continue;
+const w=rr(8,12),d=rr(8,12),h=rr(14,60),x=cx+sx*8+rr(-.5,.5),z=cz+sz*8+rr(-.5,.5);
+const g=new W.BoxGeometry(w,h,d),u=g.attributes.uv;for(let i=0;i<u.count;i++)u.setXY(i,u.getX(i)*w/8,u.getY(i)*h/8);
+const m=new W.Mesh(g,bm[rnd()*6|0]);m.position.set(x,h/2,z);m.castShadow=m.receiveShadow=true;scene.add(m);CO.push({x,z,hw:w/2,hd:d/2})}
+
+// village huts
+const hm=[0xe8d9b5,0xd8b58a,0xcfd8c0].map(c=>new W.MeshLambertMaterial({color:c})),roofM=new W.MeshLambertMaterial({color:0x9a4a2e}),hp=[];
+for(let i=0,n=0;n<26&&i<500;i++){const x=rr(-50,105),z=rr(-170,170);if(Math.abs(z)<16||hp.some(p=>Math.hypot(p[0]-x,p[1]-z)<16))continue;hp.push([x,z]);
+const g=new W.Group(),b=new W.Mesh(new W.BoxGeometry(7,4,5.5),hm[n++%3]);b.position.y=1.5;
+const r=new W.Mesh(new W.ConeGeometry(5.6,2.8,4),roofM);r.rotation.y=Math.PI/4;r.scale.z=.75;r.position.y=4.9;
+b.castShadow=r.castShadow=true;g.add(b,r);const q=rnd()<.5;g.position.set(x,H(x,z),z);g.rotation.y=q?Math.PI/2:0;scene.add(g);
+CO.push({x,z,hw:q?2.9:3.6,hd:q?3.6:2.9})}
+
+// trees
+const NT=300,tr=new W.InstancedMesh(new W.CylinderGeometry(.35,.5,3,6).translate(0,1.5,0),new W.MeshLambertMaterial({color:0x6b4a2b}),NT),
+cr=new W.InstancedMesh(new W.ConeGeometry(2.2,5.5,7).translate(0,5,0),new W.MeshLambertMaterial({color:0xffffff}),NT),tcol=new W.Color();
+let nt=0;
+for(let i=0;i<900&&nt<NT;i++){const vil=nt<130,x=vil?rr(-50,110):rr(115,335),z=rr(-190,190);
+if(Math.abs(z)<11||(vil&&hp.some(p=>Math.hypot(p[0]-x,p[1]-z)<10)))continue;
+const s=rr(.8,1.6);O.position.set(x,H(x,z)-.2,z);O.rotation.set(0,rnd()*6,0);O.scale.set(s,s,s);O.updateMatrix();
+tr.setMatrixAt(nt,O.matrix);cr.setMatrixAt(nt,O.matrix);cr.setColorAt(nt,tcol.setHSL(vil?.27+rr(-.03,.03):.3,vil?.55:.3,vil?rr(.24,.34):rr(.16,.24)));
+CO.push({x,z,hw:.6*s,hd:.6*s});nt++}
+tr.count=cr.count=nt;tr.castShadow=cr.castShadow=true;scene.add(tr,cr);
+
+// rocks
+const NR=70,rk=new W.InstancedMesh(new W.DodecahedronGeometry(1,0),new W.MeshLambertMaterial({color:0x8a8378,flatShading:true}),NR);
+for(let i=0;i<NR;i++){const x=i<6?rr(-30,100):rr(115,335),z=rr(-190,190);if(Math.abs(z)<9){i--;continue}
+const s=rr(1,3.4);O.position.set(x,H(x,z)+s*.3,z);O.rotation.set(rnd()*3,rnd()*3,rnd()*3);O.scale.set(s,s*rr(.6,1),s);O.updateMatrix();rk.setMatrixAt(i,O.matrix);CO.push({x,z,hw:s*.8,hd:s*.8})}
+rk.castShadow=true;scene.add(rk);
+
+// clouds
+const cmat=new W.MeshLambertMaterial({color:0xffffff,fog:false,transparent:true,opacity:.92});
+for(let i=0;i<16;i++){const g=new W.Group();for(let j=0;j<4;j++){const s=new W.Mesh(new W.SphereGeometry(rr(8,14),8,6),cmat);s.position.set(j*10-15,rr(-2,3),rr(-5,5));s.scale.y=.5;g.add(s)}
+g.position.set(rr(-250,350),rr(110,150),rr(-250,250));scene.add(g)}
+
+// coins
+const coins=[],cg=new W.CylinderGeometry(1,1,.25,18).rotateX(Math.PI/2),cmt=new W.MeshLambertMaterial({color:0xffc400,emissive:0x664400});
+const free=(x,z)=>!CO.some(c=>Math.abs(x-c.x)<c.hw+4&&Math.abs(z-c.z)<c.hd+4);
+for(let i=0;i<30;i++){let x,z;do{if(i<9){x=rr(-230,-100);z=ZS[rnd()*7|0]}else if(i<19){x=rr(-30,100);z=rr(-60,60)}else{x=rr(125,320);z=rr(-90,90)}}while(!free(x,z));
+const m=new W.Mesh(cg,cmt);m.position.set(x,H(x,z)+1.8,z);scene.add(m);coins.push(m)}
+
+// car
+const car=new W.Group();car.rotation.order='YXZ';
+const mk=(g,c,x,y,z,basic)=>{const m=new W.Mesh(g,basic?new W.MeshBasicMaterial({color:c}):new W.MeshLambertMaterial({color:c}));m.position.set(x,y,z);m.castShadow=true;car.add(m);return m};
+mk(new W.BoxGeometry(2.2,.8,4.4),0xd62828,0,1.05,0);mk(new W.BoxGeometry(1.9,.8,2.3),0x1d2330,0,1.85,-.2);mk(new W.BoxGeometry(2,.12,2.2),0x222222,0,2.31,-.2);
+[-.75,.75].forEach(x=>{mk(new W.BoxGeometry(.5,.25,.06),0xfff4c0,x,1.1,2.21,1);mk(new W.BoxGeometry(.5,.25,.06),0xff2020,x,1.1,-2.21,1)});
+const wm=new W.MeshLambertMaterial({color:0x151515}),sk=new W.MeshLambertMaterial({color:0x999999}),wh=[];
+[[-1.2,1.5],[1.2,1.5],[-1.2,-1.5],[1.2,-1.5]].forEach(([x,z],i)=>{const st=new W.Group(),sp=new W.Group();st.position.set(x,.58,z);
+const m=new W.Mesh(new W.CylinderGeometry(.58,.58,.5,14).rotateZ(Math.PI/2),wm),s=new W.Mesh(new W.BoxGeometry(.56,.14,.9),sk);m.castShadow=true;sp.add(m,s);st.add(sp);car.add(st);wh.push([st,sp,i<2])});
+scene.add(car);
+
+// state
+let px,pz,hd,vx,vz,py,yv,air,lastG,camH,camY=5,pt=0,rl=0,spin=0,stv=0,shake=0,score=0,started=false,spd=0;
+const K={up:0,dn:0,l:0,r:0,br:0};
+function ground(){const fx=Math.sin(hd),fz=Math.cos(hd),rx=Math.cos(hd),rz=-Math.sin(hd),
+f=H(px+fx*1.6,pz+fz*1.6),b=H(px-fx*1.6,pz-fz*1.6),r=H(px+rx*1.1,pz+rz*1.1),l=H(px-rx*1.1,pz-rz*1.1);
+return{g:(f+b+r+l)/4,sl:(f-b)/3.2,p:Math.atan2(f-b,3.2),r:Math.atan2(r-l,2.2)}}
+function reset(){px=-180;pz=0;hd=Math.PI/2;vx=vz=0;py=0;yv=0;air=false;lastG=0;camH=hd}
+reset();
+function collide(){for(const c of CO){const dx=px-c.x,dz=pz-c.z;if(Math.abs(dx)>c.hw+3||Math.abs(dz)>c.hd+3)continue;
+const qx=cl(px,c.x-c.hw,c.x+c.hw),qz=cl(pz,c.z-c.hd,c.z+c.hd);let nx=px-qx,ny=pz-qz,d=Math.hypot(nx,ny);
+if(d<2.1){if(d<1e-4){nx=dx;ny=dz;d=Math.hypot(nx,ny)||1}nx/=d;ny/=d;px+=nx*(2.1-d);pz+=ny*(2.1-d);
+const vn=vx*nx+vz*ny;if(vn<0){vx-=vn*nx*1.4;vz-=vn*ny*1.4;shake=Math.max(shake,Math.min(1,-vn/18))}}}}
+function step(dt){
+const T=started?K.up-K.dn:0,S=started?K.l-K.r:0,br=started&&K.br,G=ground(),road=onRoad(px,pz);
+const fx=Math.sin(hd),fz=Math.cos(hd),rx=Math.cos(hd),rz=-Math.sin(hd);
+let v=vx*fx+vz*fz,lat=vx*rx+vz*rz;const mx=road?44:25;
+if(!air){
+if(T>0){if(v<mx)v+=(road?22:16)*dt*(1-Math.max(0,v)/mx*.6)}
+else if(T<0){if(v>.5)v-=36*dt;else v=Math.max(v-12*dt,-9)}
+if(br)v-=Math.sign(v)*Math.min(Math.abs(v),30*dt);
+let dr=v*(road?.12:.45)*dt;if(!T)dr+=Math.sign(v)*Math.min(Math.abs(v),3*dt);v-=dr;
+v-=G.sl*9.8*dt*.9;
+lat*=Math.max(0,1-(br?1.2:road?7:4.2)*dt);
+vx=fx*v+rx*lat;vz=fz*v+rz*lat;
+hd+=S*Math.min(Math.abs(v)/7,1)*(1.7-Math.min(Math.abs(v),40)/40*.9)*(v<0?-1:1)*dt;
+}
+px+=vx*dt;pz+=vz*dt;collide();
+if(px<-245||px>345){px=cl(px,-245,345);vx=0}if(pz<-195||pz>195){pz=cl(pz,-195,195);vz=0}
+const G2=ground(),gv=cl((G2.g-lastG)/dt,-30,30);
+yv-=30*dt;py+=yv*dt;
+if(py<=G2.g){if(air&&yv<-10)shake=Math.max(shake,.5);py=G2.g;air=false;yv=gv}else air=py>G2.g+.1;
+lastG=G2.g;
+const k=Math.min(1,8*dt);pt+=(-G2.p-pt)*k;rl+=(G2.r-rl)*k;
+car.position.set(px,py,pz);car.rotation.set(pt,hd,rl);
+spd=Math.abs(vx*Math.sin(hd)+vz*Math.cos(hd));spin+=(vx*Math.sin(hd)+vz*Math.cos(hd))*dt/.58;stv+=(S*.45-stv)*Math.min(1,10*dt);
+wh.forEach(w=>{w[1].rotation.x=spin;if(w[2])w[0].rotation.y=stv});
+for(const m of coins)if(m.visible){m.rotation.y+=dt*3;
+if(Math.hypot(px-m.position.x,pz-m.position.z)<3.8&&Math.abs(py-m.position.y)<4){m.visible=false;score++;$('coin').textContent=score;
+if(score===30)$('msg').textContent='अभिनंदन! सर्व नाणी जमा केली 🎉'}}
+let da=((hd-camH+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;camH+=da*(1-Math.exp(-3.5*dt));
+const cx=px-Math.sin(camH)*9.5,cz=pz-Math.cos(camH)*9.5;
+camY+=(Math.max(py+4.6,H(cx,cz)+2.5)-camY)*(1-Math.exp(-6*dt));shake*=Math.exp(-5*dt);
+cam.position.set(cx+(rnd()-.5)*shake,camY+(rnd()-.5)*shake,cz+(rnd()-.5)*shake);
+cam.lookAt(px+Math.sin(camH)*6,py+1.6,pz+Math.cos(camH)*6);
+cam.fov=62+Math.min(spd,45)*.5;cam.updateProjectionMatrix();
+sun.position.set(px+60,100,pz+40);sun.target.position.set(px,0,pz);
+$('spd').textContent=Math.round(spd*3.6);$('zone').textContent=px<-92?'🏙️ शहर':px<110?'🏡 गाव':'⛰️ ऑफ-रोड';
+if(osc){osc.frequency.value=40+spd*3.4+(T>0?12:0);eg.gain.value=started?.03:0}
+}
+
+// audio
+let ac,osc,eg;
+function audio(){try{ac=new(window.AudioContext||window.webkitAudioContext)();osc=ac.createOscillator();eg=ac.createGain();const f=ac.createBiquadFilter();
+osc.type='sawtooth';f.frequency.value=380;eg.gain.value=.03;osc.connect(f);f.connect(eg);eg.connect(ac.destination);osc.start()}catch(e){}}
+
+// input
+const map={KeyW:'up',ArrowUp:'up',KeyS:'dn',ArrowDown:'dn',KeyA:'l',ArrowLeft:'l',KeyD:'r',ArrowRight:'r',Space:'br'};
+addEventListener('keydown',e=>{if(map[e.code]){K[map[e.code]]=1;e.preventDefault()}if(e.code==='KeyR')reset()});
+addEventListener('keyup',e=>{if(map[e.code])K[map[e.code]]=0});
+[['bL','l'],['bR','r'],['bG','up'],['bB','dn']].forEach(([id,k])=>{const b=$(id);
+b.addEventListener('pointerdown',e=>{K[k]=1;e.preventDefault()});['pointerup','pointerleave','pointercancel'].forEach(n=>b.addEventListener(n,()=>{K[k]=0}))});
+$('rs').addEventListener('click',reset);
+$('go').addEventListener('click',()=>{started=true;$('start').style.display='none';audio()});
+
+let last=performance.now();
+(function loop(t){requestAnimationFrame(loop);const dt=Math.min(.05,(t-last)/1000)||.016;last=t;step(dt);renderer.render(scene,cam)})(last);
+})();
+</script>
+</body>
+  </html>
+  
